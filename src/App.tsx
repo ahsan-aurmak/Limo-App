@@ -3394,7 +3394,6 @@ const App = () => {
           >
             Resubmit All Failed Trips
           </Button>
-          <Button icon={<FileSearchOutlined />} onClick={() => setActiveLesTab("submission")}>Open Failed Trips Queue</Button>
           <Tag color={lesConnectionHealth === "CONNECTED" ? "success" : "warning"}>
             LES Connector: {lesConnectionHealth === "CONNECTED" ? "Connected" : "Not ready"}
           </Tag>
@@ -3440,10 +3439,6 @@ const App = () => {
 
       <Card className="glass-card" title={`Failed Trips Queue (${failedTrips.length})`}>
         <Table columns={failedTripsColumns} dataSource={failedTrips} pagination={{ pageSize: 6 }} />
-      </Card>
-
-      <Card className="glass-card" title="LES Run History">
-        <Table columns={submissionHistoryColumns} dataSource={submissionHistory} pagination={{ pageSize: 6 }} />
       </Card>
     </Space>
   );

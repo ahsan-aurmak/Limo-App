@@ -151,10 +151,6 @@ body {
   border-radius: 6px;
 }
 
-.left-gap {
-  margin-left: 8px;
-}
-
 .top-gap {
   margin-top: 8px;
 }
@@ -249,10 +245,6 @@ body {
   margin-top: 4px;
 }
 
-.text-danger {
-  color: #fecaca;
-}
-
 .kpi-card {
   overflow: hidden;
 }
@@ -271,18 +263,6 @@ body {
 
 .kpi-card--four {
   border-top: 3px solid #0284c7 !important;
-}
-
-.workflow-card {
-  height: 100%;
-  border: 1px solid rgba(14, 116, 144, 0.18) !important;
-  border-radius: 14px !important;
-}
-
-.platform-health-card {
-  height: 100%;
-  border: 1px solid rgba(15, 118, 110, 0.14) !important;
-  border-radius: 14px !important;
 }
 
 .dashboard-list-row {
