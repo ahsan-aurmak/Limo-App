@@ -811,6 +811,11 @@ const readStoredAuthCredentials = (): StoredAuthCredentials | null => {
   }
 };
 
+const clearStoredAuthCredentials = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(AUTH_CREDENTIALS_STORAGE_KEY);
+};
+
 const getFileExtension = (fileName: string) => {
   const sections = fileName.toLowerCase().split(".");
   if (sections.length < 2) return "";
@@ -2433,10 +2438,21 @@ const App = () => {
       setAuthCredentials(nextCredentials);
       authSetupForm.resetFields();
       loginForm.resetFields();
-      api.success("Operator account created. Please sign in.");
+      setIsAuthenticated(true);
+      setActiveMenu("dashboard");
+      api.success("Operator account created and signed in.");
     } catch {
       api.error("Please complete all required account setup fields.");
     }
+  };
+
+  const onResetOperatorAccount = () => {
+    clearStoredAuthCredentials();
+    setAuthCredentials(null);
+    setIsAuthenticated(false);
+    authSetupForm.resetFields();
+    loginForm.resetFields();
+    api.info("Operator account reset. Create a new account to continue.");
   };
 
   const onLogin = async () => {
@@ -2456,8 +2472,16 @@ const App = () => {
 
       setIsAuthenticated(true);
       api.success("Logged in.");
-    } catch {
-      api.error("Please enter username and password.");
+    } catch (error) {
+      const messageText =
+        error instanceof Error && error.message
+          ? error.message
+          : "Please enter username and password.";
+      if (messageText.includes("Secure password hashing")) {
+        api.error("This browser does not support secure login. Try a modern browser.");
+        return;
+      }
+      api.error(messageText);
     }
   };
 
@@ -4793,6 +4817,9 @@ const App = () => {
                     <Button type="primary" size="large" htmlType="submit" block>
                       Create Operator Account
                     </Button>
+                    <Button onClick={onResetOperatorAccount} block>
+                      Reset Setup
+                    </Button>
                   </Form>
                 ) : (
                   <Form form={loginForm} layout="vertical" requiredMark onFinish={() => void onLogin()}>
@@ -4812,6 +4839,9 @@ const App = () => {
                     </Form.Item>
                     <Button type="primary" size="large" htmlType="submit" block>
                       Login
+                    </Button>
+                    <Button onClick={onResetOperatorAccount} block>
+                      Reset Operator Account
                     </Button>
                   </Form>
                 )}
