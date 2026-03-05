@@ -14,6 +14,12 @@ npm install
 npm run dev
 ```
 
+## Security Notes
+
+- The first app launch requires creating an operator account in-browser before login.
+- Do not store platform exports, personal statements, or other sensitive research files in this repository.
+- For production, move authentication and connector secret handling to a backend service with encrypted secret storage.
+
 ## Next MVP modules
 
 - LES auth and connector service

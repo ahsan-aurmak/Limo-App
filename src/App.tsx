@@ -85,6 +85,12 @@ type LoginFormValues = {
   password: string;
 };
 
+type AuthSetupFormValues = {
+  username: string;
+  password: string;
+  confirmPassword: string;
+};
+
 type ConnectorFormValues = {
   accountId?: string;
   authMethod?: AuthMethod;
@@ -294,11 +300,19 @@ type LesRunScope =
   | { type: "failed-platform"; platform: Platform };
 
 const CONNECTOR_PREFS_STORAGE_KEY = "carmak.connector.preferences.v2";
+const AUTH_CREDENTIALS_STORAGE_KEY = "carmak.auth.credentials.v1";
+const PASSWORD_HASH_ITERATIONS = 120_000;
+const MAX_TRIP_UPLOAD_SIZE_MB = 10;
+const MAX_RECEIPT_UPLOAD_SIZE_MB = 8;
+const TRIP_UPLOAD_ACCEPT = ".csv,.xlsx,.xls";
+const RECEIPT_UPLOAD_ACCEPT = ".jpg,.jpeg,.png,.webp,.heic,.heif";
 
-const APP_LOGIN_CREDENTIALS = {
-  username: "operator",
-  password: "Carmak@2026",
-} as const;
+type StoredAuthCredentials = {
+  username: string;
+  salt: string;
+  passwordHash: string;
+  iterations: number;
+};
 
 const platformLogoMap: Record<Platform, string> = {
   UBER: uberLogo,
@@ -733,6 +747,76 @@ const queueDriverNames = [
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const bufferToBase64 = (buffer: ArrayBuffer) => {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+};
+
+const base64ToUint8Array = (value: string) => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+};
+
+const derivePasswordHash = async (password: string, saltBase64: string, iterations = PASSWORD_HASH_ITERATIONS) => {
+  if (typeof window === "undefined" || !window.crypto?.subtle) {
+    throw new Error("Secure password hashing is not available in this browser.");
+  }
+  const keyMaterial = await window.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await window.crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: base64ToUint8Array(saltBase64),
+      iterations,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    256,
+  );
+  return bufferToBase64(bits);
+};
+
+const generateSaltBase64 = () => {
+  if (typeof window === "undefined" || !window.crypto?.getRandomValues) {
+    throw new Error("Secure random generator is not available in this browser.");
+  }
+  const salt = new Uint8Array(16);
+  window.crypto.getRandomValues(salt);
+  return bufferToBase64(salt.buffer);
+};
+
+const readStoredAuthCredentials = (): StoredAuthCredentials | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(AUTH_CREDENTIALS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredAuthCredentials;
+    if (!parsed.username || !parsed.passwordHash || !parsed.salt || !parsed.iterations) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const getFileExtension = (fileName: string) => {
+  const sections = fileName.toLowerCase().split(".");
+  if (sections.length < 2) return "";
+  return sections[sections.length - 1];
+};
+
 const formatDateTime = (date: Date) =>
   new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -796,6 +880,7 @@ const PlatformBrand = ({ platform }: { platform: Platform }) => (
 const App = () => {
   const savedPreferences = readConnectorPreferences();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authCredentials, setAuthCredentials] = useState<StoredAuthCredentials | null>(() => readStoredAuthCredentials());
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activeLesTab, setActiveLesTab] = useState<LesTabKey>("overview");
@@ -891,6 +976,7 @@ const App = () => {
   );
 
   const [loginForm] = Form.useForm<LoginFormValues>();
+  const [authSetupForm] = Form.useForm<AuthSetupFormValues>();
   const [uberForm] = Form.useForm<ConnectorFormValues>();
   const [careemForm] = Form.useForm<ConnectorFormValues>();
   const [indriveForm] = Form.useForm<ConnectorFormValues>();
@@ -1149,6 +1235,7 @@ const App = () => {
   );
 
   const unresolvedFailedCount = failedTrips.length;
+  const requiresAuthSetup = !authCredentials;
 
   useEffect(() => {
     const payload: ConnectorPreferences = {
@@ -1161,7 +1248,13 @@ const App = () => {
   }, [selectedModes, authMethods]);
 
   useEffect(() => {
-    setFailedTrips(buildFailedTripQueue(platformStats));
+    setFailedTrips((previous) => {
+      const previousAttemptMap = new Map(previous.map((trip) => [trip.key, trip.lastAttempt]));
+      return buildFailedTripQueue(platformStats).map((trip) => ({
+        ...trip,
+        lastAttempt: previousAttemptMap.get(trip.key) ?? trip.lastAttempt,
+      }));
+    });
   }, [platformStats]);
 
   const connectionStatusTag = (status: ConnectionHealth) => {
@@ -1268,6 +1361,7 @@ const App = () => {
     setLesLikelyFailureReasons([]);
 
     loginForm.resetFields();
+    authSetupForm.resetFields();
     uberForm.resetFields();
     careemForm.resetFields();
     indriveForm.resetFields();
@@ -1409,10 +1503,28 @@ const App = () => {
     api.success(`${platformNameMap[platform]} upload received (${fileName}). ${ready} trips ready for LES.`);
   };
 
+  const validateTripUploadFile = (file: File) => {
+    const extension = getFileExtension(file.name);
+    const allowedExtensions = new Set(["csv", "xlsx", "xls"]);
+    if (!allowedExtensions.has(extension)) {
+      api.error("Only CSV or Excel files are allowed for trip upload.");
+      return false;
+    }
+
+    if (file.size > MAX_TRIP_UPLOAD_SIZE_MB * 1024 * 1024) {
+      api.error(`Trip upload file is too large. Maximum size is ${MAX_TRIP_UPLOAD_SIZE_MB} MB.`);
+      return false;
+    }
+
+    return true;
+  };
+
   const uploadProps = (platform: Platform): UploadProps => ({
     maxCount: 1,
     showUploadList: false,
+    accept: TRIP_UPLOAD_ACCEPT,
     beforeUpload: (file) => {
+      if (!validateTripUploadFile(file as File)) return Upload.LIST_IGNORE;
       simulateManualUpload(platform, file.name);
       return false;
     },
@@ -1421,86 +1533,90 @@ const App = () => {
   const runIngestionNow = async () => {
     if (syncRunning) return;
     setSyncRunning(true);
+    try {
+      await wait(1000 + Math.floor(Math.random() * 400));
 
-    await wait(1000 + Math.floor(Math.random() * 400));
+      const newRuns: IngestRun[] = [];
+      setPlatformStats((previous) =>
+        previous.map((row) => {
+          const mode = selectedModes[row.platform];
 
-    const newRuns: IngestRun[] = [];
-    setPlatformStats((previous) =>
-      previous.map((row) => {
-        const mode = selectedModes[row.platform];
+          if (mode !== "API") {
+            newRuns.push({
+              key: `ir-${Date.now()}-${row.platform}-wait`,
+              platform: row.platform,
+              source: "UPLOAD",
+              fetched: 0,
+              mapped: 0,
+              failed: 0,
+              status: "WAITING",
+              runAt: formatDateTime(new Date()),
+            });
+            return row;
+          }
 
-        if (mode !== "API") {
+          const fetched = 50 + Math.floor(Math.random() * 120);
+          const failed = Math.floor(fetched * (0.01 + Math.random() * 0.08));
+          const mapped = fetched - failed;
+          const nextFailed = row.failed + failed;
+
           newRuns.push({
-            key: `ir-${Date.now()}-${row.platform}-wait`,
+            key: `ir-${Date.now()}-${row.platform}`,
             platform: row.platform,
-            source: "UPLOAD",
-            fetched: 0,
-            mapped: 0,
-            failed: 0,
-            status: "WAITING",
+            source: "API",
+            fetched,
+            mapped,
+            failed,
+            status: failed > 0 ? "PARTIAL" : "SUCCESS",
             runAt: formatDateTime(new Date()),
           });
-          return row;
-        }
 
-        const fetched = 50 + Math.floor(Math.random() * 120);
-        const failed = Math.floor(fetched * (0.01 + Math.random() * 0.08));
-        const mapped = fetched - failed;
-        const nextFailed = row.failed + failed;
+          return {
+            ...row,
+            todayImported: row.todayImported + fetched,
+            readyForLes: row.readyForLes + mapped,
+            failed: nextFailed,
+            status: nextFailed > 0 ? "attention" : "good",
+          };
+        }),
+      );
 
-        newRuns.push({
-          key: `ir-${Date.now()}-${row.platform}`,
-          platform: row.platform,
-          source: "API",
-          fetched,
-          mapped,
-          failed,
-          status: failed > 0 ? "PARTIAL" : "SUCCESS",
-          runAt: formatDateTime(new Date()),
-        });
-
-        return {
-          ...row,
-          todayImported: row.todayImported + fetched,
-          readyForLes: row.readyForLes + mapped,
-          failed: nextFailed,
-          status: nextFailed > 0 ? "attention" : "good",
-        };
-      }),
-    );
-
-    setIngestRuns((previous) => [...newRuns, ...previous].slice(0, 40));
-    setSyncRunning(false);
-    api.success("Ingestion cycle completed. Review ready and failed counts before LES submission.");
+      setIngestRuns((previous) => [...newRuns, ...previous].slice(0, 40));
+      api.success("Ingestion cycle completed. Review ready and failed counts before LES submission.");
+    } finally {
+      setSyncRunning(false);
+    }
   };
 
   const validateImportedTrips = async () => {
     if (validatingTrips) return;
     setValidatingTrips(true);
+    try {
+      await wait(800 + Math.floor(Math.random() * 500));
 
-    await wait(800 + Math.floor(Math.random() * 500));
+      let totalResolved = 0;
+      setPlatformStats((previous) =>
+        previous.map((row) => {
+          const resolved = row.failed > 0 ? Math.min(row.failed, Math.max(1, Math.floor(row.failed * (0.25 + Math.random() * 0.4)))) : 0;
+          totalResolved += resolved;
+          const nextFailed = Math.max(row.failed - resolved, 0);
 
-    let totalResolved = 0;
-    setPlatformStats((previous) =>
-      previous.map((row) => {
-        const resolved = row.failed > 0 ? Math.min(row.failed, Math.max(1, Math.floor(row.failed * (0.25 + Math.random() * 0.4)))) : 0;
-        totalResolved += resolved;
-        const nextFailed = Math.max(row.failed - resolved, 0);
+          return {
+            ...row,
+            readyForLes: row.readyForLes + resolved,
+            failed: nextFailed,
+            status: nextFailed > 0 ? "attention" : "good",
+          };
+        }),
+      );
 
-        return {
-          ...row,
-          readyForLes: row.readyForLes + resolved,
-          failed: nextFailed,
-          status: nextFailed > 0 ? "attention" : "good",
-        };
-      }),
-    );
-
-    setValidatingTrips(false);
-    if (totalResolved > 0) {
-      api.success(`${totalResolved} trips were auto-corrected and moved to ready queue.`);
-    } else {
-      api.info("No corrections were needed in this validation run.");
+      if (totalResolved > 0) {
+        api.success(`${totalResolved} trips were auto-corrected and moved to ready queue.`);
+      } else {
+        api.info("No corrections were needed in this validation run.");
+      }
+    } finally {
+      setValidatingTrips(false);
     }
   };
 
@@ -1508,43 +1624,45 @@ const App = () => {
     if (retryingTripKey) return;
 
     setRetryingTripKey(trip.key);
-    await wait(600 + Math.floor(Math.random() * 500));
-    const success = Math.random() < 0.72;
+    try {
+      await wait(600 + Math.floor(Math.random() * 500));
+      const success = Math.random() < 0.72;
 
-    if (success) {
-      setPlatformStats((previous) =>
-        previous.map((row) => {
-          if (row.platform !== trip.platform) return row;
-          const nextFailed = Math.max(row.failed - 1, 0);
-          return {
-            ...row,
-            failed: nextFailed,
-            status: nextFailed > 0 ? "attention" : "good",
-          };
-        }),
-      );
-      api.success(`${trip.tripRef} fixed and submitted successfully.`);
-    } else {
-      const followupReasons = [
-        "Passenger identity field is still incomplete.",
-        "Trip timestamp still invalid for LES parser.",
-        "Vehicle mapping was rejected by LES.",
-      ];
-      const reason = followupReasons[Math.floor(Math.random() * followupReasons.length)];
-      setFailedTrips((previous) =>
-        previous.map((item) =>
-          item.key === trip.key
-            ? {
-                ...item,
-                lastAttempt: `${formatDateTime(new Date())} - ${reason}`,
-              }
-            : item,
-        ),
-      );
-      api.error(`${trip.tripRef} retry failed: ${reason}`);
+      if (success) {
+        setPlatformStats((previous) =>
+          previous.map((row) => {
+            if (row.platform !== trip.platform) return row;
+            const nextFailed = Math.max(row.failed - 1, 0);
+            return {
+              ...row,
+              failed: nextFailed,
+              status: nextFailed > 0 ? "attention" : "good",
+            };
+          }),
+        );
+        api.success(`${trip.tripRef} fixed and submitted successfully.`);
+      } else {
+        const followupReasons = [
+          "Passenger identity field is still incomplete.",
+          "Trip timestamp still invalid for LES parser.",
+          "Vehicle mapping was rejected by LES.",
+        ];
+        const reason = followupReasons[Math.floor(Math.random() * followupReasons.length)];
+        setFailedTrips((previous) =>
+          previous.map((item) =>
+            item.key === trip.key
+              ? {
+                  ...item,
+                  lastAttempt: `${formatDateTime(new Date())} - ${reason}`,
+                }
+              : item,
+          ),
+        );
+        api.error(`${trip.tripRef} retry failed: ${reason}`);
+      }
+    } finally {
+      setRetryingTripKey(null);
     }
-
-    setRetryingTripKey(null);
   };
 
   const runLesSubmissionSimulation = async (
@@ -1939,10 +2057,30 @@ const App = () => {
     api.success("Receipt image attached.");
   };
 
+  const validateReceiptAttachment = (file: File) => {
+    const extension = getFileExtension(file.name);
+    const allowedExtensions = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
+    const typeIsImage = file.type.startsWith("image/");
+
+    if (!typeIsImage && !allowedExtensions.has(extension)) {
+      api.error("Only image files are allowed for receipt attachment.");
+      return false;
+    }
+
+    if (file.size > MAX_RECEIPT_UPLOAD_SIZE_MB * 1024 * 1024) {
+      api.error(`Receipt image is too large. Maximum size is ${MAX_RECEIPT_UPLOAD_SIZE_MB} MB.`);
+      return false;
+    }
+
+    return true;
+  };
+
   const whatsAppAttachmentUploadProps = (receiptKey: string): UploadProps => ({
     maxCount: 1,
     showUploadList: false,
+    accept: RECEIPT_UPLOAD_ACCEPT,
     beforeUpload: (file) => {
+      if (!validateReceiptAttachment(file as File)) return Upload.LIST_IGNORE;
       attachReceiptToWhatsAppItem(receiptKey, file as File);
       return false;
     },
@@ -2271,13 +2409,46 @@ const App = () => {
     }
   };
 
+  const onCreateCredentials = async () => {
+    try {
+      const values = await authSetupForm.validateFields();
+      if (values.password !== values.confirmPassword) {
+        authSetupForm.setFieldValue("confirmPassword", "");
+        api.error("Passwords do not match.");
+        return;
+      }
+
+      const salt = generateSaltBase64();
+      const passwordHash = await derivePasswordHash(values.password, salt, PASSWORD_HASH_ITERATIONS);
+      const nextCredentials: StoredAuthCredentials = {
+        username: values.username.trim(),
+        salt,
+        passwordHash,
+        iterations: PASSWORD_HASH_ITERATIONS,
+      };
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(AUTH_CREDENTIALS_STORAGE_KEY, JSON.stringify(nextCredentials));
+      }
+      setAuthCredentials(nextCredentials);
+      authSetupForm.resetFields();
+      loginForm.resetFields();
+      api.success("Operator account created. Please sign in.");
+    } catch {
+      api.error("Please complete all required account setup fields.");
+    }
+  };
+
   const onLogin = async () => {
     try {
+      if (!authCredentials) {
+        api.error("Account setup is required before login.");
+        return;
+      }
       const values = await loginForm.validateFields();
-      if (
-        values.username !== APP_LOGIN_CREDENTIALS.username ||
-        values.password !== APP_LOGIN_CREDENTIALS.password
-      ) {
+      const passwordHash = await derivePasswordHash(values.password, authCredentials.salt, authCredentials.iterations);
+
+      if (values.username.trim() !== authCredentials.username || passwordHash !== authCredentials.passwordHash) {
         loginForm.setFieldValue("password", "");
         api.error("Invalid username or password.");
         return;
@@ -2288,6 +2459,41 @@ const App = () => {
     } catch {
       api.error("Please enter username and password.");
     }
+  };
+
+  const onDownloadSubmissionReceipt = () => {
+    if (lesSummary.ready === 0 && lesSubmissionLog.length === 0) {
+      api.info("No submission run is available yet.");
+      return;
+    }
+
+    const createdAt = new Date();
+    const lines = [
+      "Carmak LES Submission Receipt",
+      `Generated at: ${createdAt.toISOString()}`,
+      `Trips in run: ${lesSummary.ready}`,
+      `Submitted: ${lesSummary.submitted}`,
+      `Failed: ${lesSummary.failed}`,
+      "",
+      "Most likely failure reasons:",
+      ...(lesLikelyFailureReasons.length > 0
+        ? lesLikelyFailureReasons.map((item) => `- ${item.reason} (${item.count})`)
+        : ["- None"]),
+      "",
+      "Submission log:",
+      ...(lesSubmissionLog.length > 0 ? lesSubmissionLog.map((line) => `- ${line}`) : ["- No run log captured"]),
+    ];
+
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `les-submission-receipt-${createdAt.toISOString().replace(/[:.]/g, "-")}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    api.success("Submission receipt downloaded.");
   };
 
   const onProfileAction: MenuProps["onClick"] = ({ key }) => {
@@ -3270,7 +3476,16 @@ const App = () => {
               <Form.Item
                 label="LES Base URL"
                 name="baseUrl"
-                rules={[{ required: true, message: "LES Base URL is required." }]}
+                rules={[
+                  { required: true, message: "LES Base URL is required." },
+                  { type: "url", message: "Enter a valid URL." },
+                  {
+                    validator: async (_rule, value?: string) => {
+                      if (!value || value.startsWith("https://")) return;
+                      throw new Error("LES Base URL must start with https://");
+                    },
+                  },
+                ]}
                 extra="Use the official LES base URL shared with your company."
               >
                 <Input placeholder="https://les-api.example.gov.ae" />
@@ -4465,7 +4680,7 @@ const App = () => {
             <Switch checked={smsAlertEnabled} onChange={setSmsAlertEnabled} />
           </Space>
           <Typography.Text type="secondary">
-            Alerts are simulated in this prototype and mimic production notification behavior.
+            Configure alerts so operators are notified quickly for LES failures and exceptions.
           </Typography.Text>
         </Space>
       </Card>
@@ -4540,27 +4755,66 @@ const App = () => {
                 <Typography.Title level={3} className="header-title">
                   Carmak
                 </Typography.Title>
-                <Typography.Text type="secondary">Sign in to continue to your operations command center.</Typography.Text>
+                <Typography.Text type="secondary">
+                  {requiresAuthSetup
+                    ? "Create the first operator account for this deployment."
+                    : "Sign in to continue to your operations command center."}
+                </Typography.Text>
 
-                <Form form={loginForm} layout="vertical" requiredMark onFinish={() => void onLogin()}>
-                  <Form.Item
-                    label="Username"
-                    name="username"
-                    rules={[{ required: true, message: "Username is required." }]}
-                  >
-                    <Input placeholder="Username" autoComplete="username" />
-                  </Form.Item>
-                  <Form.Item
-                    label="Password"
-                    name="password"
-                    rules={[{ required: true, message: "Password is required." }]}
-                  >
-                    <Input.Password placeholder="Password" autoComplete="current-password" />
-                  </Form.Item>
-                  <Button type="primary" size="large" htmlType="submit" block>
-                    Login
-                  </Button>
-                </Form>
+                {requiresAuthSetup ? (
+                  <Form form={authSetupForm} layout="vertical" requiredMark onFinish={() => void onCreateCredentials()}>
+                    <Form.Item
+                      label="Operator Username"
+                      name="username"
+                      rules={[
+                        { required: true, message: "Username is required." },
+                        { min: 3, message: "Username must be at least 3 characters." },
+                      ]}
+                    >
+                      <Input placeholder="Create username" autoComplete="username" />
+                    </Form.Item>
+                    <Form.Item
+                      label="Password"
+                      name="password"
+                      rules={[
+                        { required: true, message: "Password is required." },
+                        { min: 8, message: "Password must be at least 8 characters." },
+                      ]}
+                    >
+                      <Input.Password placeholder="Create password" autoComplete="new-password" />
+                    </Form.Item>
+                    <Form.Item
+                      label="Confirm Password"
+                      name="confirmPassword"
+                      rules={[{ required: true, message: "Please confirm password." }]}
+                    >
+                      <Input.Password placeholder="Confirm password" autoComplete="new-password" />
+                    </Form.Item>
+                    <Button type="primary" size="large" htmlType="submit" block>
+                      Create Operator Account
+                    </Button>
+                  </Form>
+                ) : (
+                  <Form form={loginForm} layout="vertical" requiredMark onFinish={() => void onLogin()}>
+                    <Form.Item
+                      label="Username"
+                      name="username"
+                      rules={[{ required: true, message: "Username is required." }]}
+                    >
+                      <Input placeholder="Username" autoComplete="username" />
+                    </Form.Item>
+                    <Form.Item
+                      label="Password"
+                      name="password"
+                      rules={[{ required: true, message: "Password is required." }]}
+                    >
+                      <Input.Password placeholder="Password" autoComplete="current-password" />
+                    </Form.Item>
+                    <Button type="primary" size="large" htmlType="submit" block>
+                      Login
+                    </Button>
+                  </Form>
+                )}
               </Space>
             </Card>
           </div>
@@ -4670,7 +4924,7 @@ const App = () => {
                       <Button
                         key="receipt"
                         type="primary"
-                        onClick={() => api.success("Submission receipt download will be connected next.")}
+                        onClick={onDownloadSubmissionReceipt}
                       >
                         Download Submission Receipt
                       </Button>,

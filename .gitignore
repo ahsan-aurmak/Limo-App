@@ -2,3 +2,9 @@ node_modules
 dist
 .DS_Store
 *.tsbuildinfo
+
+# Private artifacts and exports
+Carmak-*.zip
+workflowlimousinebusinessabudhabhiuae/
+*.pdf
+*.docx
