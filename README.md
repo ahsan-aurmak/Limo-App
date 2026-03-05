@@ -16,7 +16,7 @@ npm run dev
 
 ## Security Notes
 
-- The first app launch requires creating an operator account in-browser before login.
+- This demo currently uses one shared operator credential for login (configured in frontend code).
 - Do not store platform exports, personal statements, or other sensitive research files in this repository.
 - For production, move authentication and connector secret handling to a backend service with encrypted secret storage.
 

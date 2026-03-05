@@ -85,12 +85,6 @@ type LoginFormValues = {
   password: string;
 };
 
-type AuthSetupFormValues = {
-  username: string;
-  password: string;
-  confirmPassword: string;
-};
-
 type ConnectorFormValues = {
   accountId?: string;
   authMethod?: AuthMethod;
@@ -300,19 +294,14 @@ type LesRunScope =
   | { type: "failed-platform"; platform: Platform };
 
 const CONNECTOR_PREFS_STORAGE_KEY = "carmak.connector.preferences.v2";
-const AUTH_CREDENTIALS_STORAGE_KEY = "carmak.auth.credentials.v1";
-const PASSWORD_HASH_ITERATIONS = 120_000;
 const MAX_TRIP_UPLOAD_SIZE_MB = 10;
 const MAX_RECEIPT_UPLOAD_SIZE_MB = 8;
 const TRIP_UPLOAD_ACCEPT = ".csv,.xlsx,.xls";
 const RECEIPT_UPLOAD_ACCEPT = ".jpg,.jpeg,.png,.webp,.heic,.heif";
-
-type StoredAuthCredentials = {
-  username: string;
-  salt: string;
-  passwordHash: string;
-  iterations: number;
-};
+const APP_LOGIN_CREDENTIALS = {
+  username: "operator",
+  password: "Carmak@2026",
+} as const;
 
 const platformLogoMap: Record<Platform, string> = {
   UBER: uberLogo,
@@ -747,75 +736,6 @@ const queueDriverNames = [
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const bufferToBase64 = (buffer: ArrayBuffer) => {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
-};
-
-const base64ToUint8Array = (value: string) => {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-};
-
-const derivePasswordHash = async (password: string, saltBase64: string, iterations = PASSWORD_HASH_ITERATIONS) => {
-  if (typeof window === "undefined" || !window.crypto?.subtle) {
-    throw new Error("Secure password hashing is not available in this browser.");
-  }
-  const keyMaterial = await window.crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await window.crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: base64ToUint8Array(saltBase64),
-      iterations,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    256,
-  );
-  return bufferToBase64(bits);
-};
-
-const generateSaltBase64 = () => {
-  if (typeof window === "undefined" || !window.crypto?.getRandomValues) {
-    throw new Error("Secure random generator is not available in this browser.");
-  }
-  const salt = new Uint8Array(16);
-  window.crypto.getRandomValues(salt);
-  return bufferToBase64(salt.buffer);
-};
-
-const readStoredAuthCredentials = (): StoredAuthCredentials | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(AUTH_CREDENTIALS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredAuthCredentials;
-    if (!parsed.username || !parsed.passwordHash || !parsed.salt || !parsed.iterations) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-};
-
-const clearStoredAuthCredentials = () => {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(AUTH_CREDENTIALS_STORAGE_KEY);
-};
-
 const getFileExtension = (fileName: string) => {
   const sections = fileName.toLowerCase().split(".");
   if (sections.length < 2) return "";
@@ -885,7 +805,6 @@ const PlatformBrand = ({ platform }: { platform: Platform }) => (
 const App = () => {
   const savedPreferences = readConnectorPreferences();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authCredentials, setAuthCredentials] = useState<StoredAuthCredentials | null>(() => readStoredAuthCredentials());
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activeLesTab, setActiveLesTab] = useState<LesTabKey>("overview");
@@ -981,7 +900,6 @@ const App = () => {
   );
 
   const [loginForm] = Form.useForm<LoginFormValues>();
-  const [authSetupForm] = Form.useForm<AuthSetupFormValues>();
   const [uberForm] = Form.useForm<ConnectorFormValues>();
   const [careemForm] = Form.useForm<ConnectorFormValues>();
   const [indriveForm] = Form.useForm<ConnectorFormValues>();
@@ -1240,7 +1158,6 @@ const App = () => {
   );
 
   const unresolvedFailedCount = failedTrips.length;
-  const requiresAuthSetup = !authCredentials;
 
   useEffect(() => {
     const payload: ConnectorPreferences = {
@@ -1366,7 +1283,6 @@ const App = () => {
     setLesLikelyFailureReasons([]);
 
     loginForm.resetFields();
-    authSetupForm.resetFields();
     uberForm.resetFields();
     careemForm.resetFields();
     indriveForm.resetFields();
@@ -2414,57 +2330,13 @@ const App = () => {
     }
   };
 
-  const onCreateCredentials = async () => {
-    try {
-      const values = await authSetupForm.validateFields();
-      if (values.password !== values.confirmPassword) {
-        authSetupForm.setFieldValue("confirmPassword", "");
-        api.error("Passwords do not match.");
-        return;
-      }
-
-      const salt = generateSaltBase64();
-      const passwordHash = await derivePasswordHash(values.password, salt, PASSWORD_HASH_ITERATIONS);
-      const nextCredentials: StoredAuthCredentials = {
-        username: values.username.trim(),
-        salt,
-        passwordHash,
-        iterations: PASSWORD_HASH_ITERATIONS,
-      };
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(AUTH_CREDENTIALS_STORAGE_KEY, JSON.stringify(nextCredentials));
-      }
-      setAuthCredentials(nextCredentials);
-      authSetupForm.resetFields();
-      loginForm.resetFields();
-      setIsAuthenticated(true);
-      setActiveMenu("dashboard");
-      api.success("Operator account created and signed in.");
-    } catch {
-      api.error("Please complete all required account setup fields.");
-    }
-  };
-
-  const onResetOperatorAccount = () => {
-    clearStoredAuthCredentials();
-    setAuthCredentials(null);
-    setIsAuthenticated(false);
-    authSetupForm.resetFields();
-    loginForm.resetFields();
-    api.info("Operator account reset. Create a new account to continue.");
-  };
-
   const onLogin = async () => {
     try {
-      if (!authCredentials) {
-        api.error("Account setup is required before login.");
-        return;
-      }
       const values = await loginForm.validateFields();
-      const passwordHash = await derivePasswordHash(values.password, authCredentials.salt, authCredentials.iterations);
-
-      if (values.username.trim() !== authCredentials.username || passwordHash !== authCredentials.passwordHash) {
+      if (
+        values.username !== APP_LOGIN_CREDENTIALS.username ||
+        values.password !== APP_LOGIN_CREDENTIALS.password
+      ) {
         loginForm.setFieldValue("password", "");
         api.error("Invalid username or password.");
         return;
@@ -2472,16 +2344,8 @@ const App = () => {
 
       setIsAuthenticated(true);
       api.success("Logged in.");
-    } catch (error) {
-      const messageText =
-        error instanceof Error && error.message
-          ? error.message
-          : "Please enter username and password.";
-      if (messageText.includes("Secure password hashing")) {
-        api.error("This browser does not support secure login. Try a modern browser.");
-        return;
-      }
-      api.error(messageText);
+    } catch {
+      api.error("Please enter username and password.");
     }
   };
 
@@ -4779,72 +4643,27 @@ const App = () => {
                 <Typography.Title level={3} className="header-title">
                   Carmak
                 </Typography.Title>
-                <Typography.Text type="secondary">
-                  {requiresAuthSetup
-                    ? "Create the first operator account for this deployment."
-                    : "Sign in to continue to your operations command center."}
-                </Typography.Text>
+                <Typography.Text type="secondary">Sign in to continue to your operations command center.</Typography.Text>
 
-                {requiresAuthSetup ? (
-                  <Form form={authSetupForm} layout="vertical" requiredMark onFinish={() => void onCreateCredentials()}>
-                    <Form.Item
-                      label="Operator Username"
-                      name="username"
-                      rules={[
-                        { required: true, message: "Username is required." },
-                        { min: 3, message: "Username must be at least 3 characters." },
-                      ]}
-                    >
-                      <Input placeholder="Create username" autoComplete="username" />
-                    </Form.Item>
-                    <Form.Item
-                      label="Password"
-                      name="password"
-                      rules={[
-                        { required: true, message: "Password is required." },
-                        { min: 8, message: "Password must be at least 8 characters." },
-                      ]}
-                    >
-                      <Input.Password placeholder="Create password" autoComplete="new-password" />
-                    </Form.Item>
-                    <Form.Item
-                      label="Confirm Password"
-                      name="confirmPassword"
-                      rules={[{ required: true, message: "Please confirm password." }]}
-                    >
-                      <Input.Password placeholder="Confirm password" autoComplete="new-password" />
-                    </Form.Item>
-                    <Button type="primary" size="large" htmlType="submit" block>
-                      Create Operator Account
-                    </Button>
-                    <Button onClick={onResetOperatorAccount} block>
-                      Reset Setup
-                    </Button>
-                  </Form>
-                ) : (
-                  <Form form={loginForm} layout="vertical" requiredMark onFinish={() => void onLogin()}>
-                    <Form.Item
-                      label="Username"
-                      name="username"
-                      rules={[{ required: true, message: "Username is required." }]}
-                    >
-                      <Input placeholder="Username" autoComplete="username" />
-                    </Form.Item>
-                    <Form.Item
-                      label="Password"
-                      name="password"
-                      rules={[{ required: true, message: "Password is required." }]}
-                    >
-                      <Input.Password placeholder="Password" autoComplete="current-password" />
-                    </Form.Item>
-                    <Button type="primary" size="large" htmlType="submit" block>
-                      Login
-                    </Button>
-                    <Button onClick={onResetOperatorAccount} block>
-                      Reset Operator Account
-                    </Button>
-                  </Form>
-                )}
+                <Form form={loginForm} layout="vertical" requiredMark onFinish={() => void onLogin()}>
+                  <Form.Item
+                    label="Username"
+                    name="username"
+                    rules={[{ required: true, message: "Username is required." }]}
+                  >
+                    <Input placeholder="Username" autoComplete="username" />
+                  </Form.Item>
+                  <Form.Item
+                    label="Password"
+                    name="password"
+                    rules={[{ required: true, message: "Password is required." }]}
+                  >
+                    <Input.Password placeholder="Password" autoComplete="current-password" />
+                  </Form.Item>
+                  <Button type="primary" size="large" htmlType="submit" block>
+                    Login
+                  </Button>
+                </Form>
               </Space>
             </Card>
           </div>
