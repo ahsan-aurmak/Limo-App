@@ -4723,14 +4723,14 @@ const App = () => {
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: "#0b6e4f",
-          colorInfo: "#0f766e",
+          colorPrimary: "#0a8a7e",
+          colorInfo: "#0a8a7e",
           borderRadius: 14,
-          fontFamily: "'Avenir Next', 'Segoe UI', sans-serif",
+          fontFamily: "'Manrope', 'Segoe UI', sans-serif",
         },
         components: {
           Layout: {
-            headerBg: "rgba(255,255,255,0.82)",
+            headerBg: "rgba(245,252,250,0.74)",
             siderBg: "#0f1f2b",
             triggerBg: "#0f1f2b",
           },
