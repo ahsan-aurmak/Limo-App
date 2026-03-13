@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Carmak Driver",
+    "slug": "carmak-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.carmak.driver"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "cf5efbbe-aa79-486e-9253-8b95a6758500"
+      }
+    },
+    "owner": "ahsanjalil"
+  }
+}
