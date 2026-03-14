@@ -9,10 +9,19 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
+import {
+  Button,
+  Card,
+  Chip,
+  Divider,
+  MD3DarkTheme,
+  PaperProvider,
+  Surface,
+  Text,
+  TextInput,
+} from "react-native-paper";
 import { demoDriver, initialBookings } from "./src/mockData";
 import { Booking, Screen } from "./src/types";
 
@@ -32,6 +41,21 @@ const emptyDraft: PassengerDraft = {
   passportNumber: "",
 };
 
+const theme = {
+  ...MD3DarkTheme,
+  colors: {
+    ...MD3DarkTheme.colors,
+    primary: "#4CC9B0",
+    secondary: "#FFB86B",
+    tertiary: "#FF7C70",
+    background: "#0E141B",
+    surface: "#151D26",
+    surfaceVariant: "#1C2631",
+    outline: "#314152",
+    error: "#FF8A80",
+  },
+};
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [bookings, setBookings] = useState<Booking[]>(initialBookings);
@@ -44,7 +68,7 @@ export default function App() {
   );
 
   const needsActionCount = bookings.filter((booking) => booking.bookingStatus !== "passenger_verified").length;
-  const confirmedCount = bookings.filter((booking) => booking.bookingStatus === "passenger_verified").length;
+  const checkedCount = bookings.filter((booking) => booking.bookingStatus === "passenger_verified").length;
   const pendingSyncCount = bookings.filter((booking) => booking.syncStatus === "pending").length;
 
   const handleLogin = () => {
@@ -110,7 +134,7 @@ export default function App() {
     Alert.alert("Passenger details saved", "The app will sync these details in the background.");
   };
 
-  const confirmPassenger = () => {
+  const verifyPassenger = () => {
     if (!selectedBooking) {
       return;
     }
@@ -182,327 +206,422 @@ export default function App() {
     Alert.alert("Passenger in car", "You can now add missing passenger details and verify the passenger.");
   };
 
-  const logout = () => {
-    setScreen("login");
-  };
+  const logout = () => setScreen("login");
 
-  if (screen === "login") {
-    return (
+  return (
+    <PaperProvider theme={theme}>
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" />
-        <KeyboardAvoidingView
-          style={styles.loginShell}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <View style={styles.loginCard}>
-            <View style={styles.loginIntro}>
-              <Text style={styles.loginBadge}>Driver App</Text>
-              <Text style={styles.loginTitle}>Complete passenger pickup check-in</Text>
-              <Text style={styles.loginText}>
-                Drivers only need the pickup location and passenger details. If details are missing, add them once the passenger is in the car.
-              </Text>
-            </View>
-
-            <Pressable onPress={handleLogin} style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}>Login</Text>
-            </Pressable>
-
-            <View style={styles.tipCard}>
-              <Text style={styles.tipTitle}>Testing mode</Text>
-              <Text style={styles.tipText}>This preview opens directly for user testing.</Text>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-      <ScrollView contentContainerStyle={styles.page}>
-        {screen === "home" ? (
-          <>
-            <View style={styles.header}>
-              <View>
-                <Text style={styles.brandLabel}>Carmak Driver</Text>
-                <Text style={styles.pageTitle}>Today&apos;s pickups</Text>
-                <Text style={styles.pageSubtitle}>Open the pickup, reach the passenger, then complete the check-in.</Text>
-              </View>
-              <Pressable onPress={logout} style={styles.logoutButton}>
-                <Text style={styles.logoutButtonText}>Logout</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryDriver}>{demoDriver.name}</Text>
-              <Text style={styles.summaryMeta}>Vehicle {demoDriver.assignedVehicle}</Text>
-              <View style={styles.summaryRow}>
-                <MiniStat label="Need action" value={needsActionCount} />
-                <MiniStat label="Checked" value={confirmedCount} />
-              </View>
-            </View>
-
-            <View style={styles.syncBanner}>
-              <View style={[styles.syncDot, pendingSyncCount > 0 ? styles.syncDotActive : styles.syncDotIdle]} />
-              <Text style={styles.syncBannerText}>
-                {pendingSyncCount > 0
-                  ? `${pendingSyncCount} update(s) will sync in background`
-                  : "All updates synced"}
-              </Text>
-            </View>
-
-            <Text style={styles.sectionTitle}>Pickups</Text>
-            {bookings.map((booking) => {
-              const missingPassengerDetails =
-                !booking.customerMobileNumber ||
-                !booking.nationality ||
-                (!booking.emiratesIdNumber && !booking.passportNumber) ||
-                booking.customerName === "Passenger details not provided";
-              const countdown = getPickupCountdown(booking.pickupTimeLocal);
-              const cardTone =
-                booking.bookingStatus === "passenger_verified"
-                  ? "success"
-                  : booking.bookingStatus === "arrived"
-                    ? "warning"
-                    : "neutral";
-
-              return (
-                <Pressable
-                  key={booking.id}
-                  onPress={() => openBooking(booking.id)}
-                  style={[
-                    styles.bookingCard,
-                    cardTone === "warning"
-                      ? styles.bookingCardWarning
-                      : cardTone === "success"
-                        ? styles.bookingCardSuccess
-                        : styles.bookingCardNeutral,
-                  ]}
+        <StatusBar barStyle="light-content" backgroundColor="#0E141B" />
+        {screen === "login" ? (
+          <KeyboardAvoidingView
+            style={styles.loginShell}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <Card mode="elevated" style={styles.loginCard}>
+              <Card.Content style={styles.loginCardContent}>
+                <Chip compact style={styles.loginChip}>
+                  Driver app
+                </Chip>
+                <Text variant="headlineMedium" style={styles.loginTitle}>
+                  Passenger pickup check-in
+                </Text>
+                <Text variant="bodyLarge" style={styles.loginBody}>
+                  Open the assigned pickup, mark when the passenger is in the car, then complete the passenger details.
+                </Text>
+                <Button
+                  mode="contained"
+                  onPress={handleLogin}
+                  contentStyle={styles.primaryButtonContent}
+                  labelStyle={styles.ctaLabel}
                 >
-                  <View
-                    style={[
-                      styles.bookingAccentBar,
-                      cardTone === "warning"
-                        ? styles.bookingAccentWarning
-                        : cardTone === "success"
-                          ? styles.bookingAccentSuccess
-                          : styles.bookingAccentNeutral,
-                    ]}
-                  />
-                  <View style={styles.bookingTopRow}>
-                    <View style={styles.bookingTopMeta}>
-                      {booking.bookingStatus === "arrived" ? (
-                        <Text style={[styles.bookingStateTitle, styles.bookingStateTitleWarning]}>
-                          {missingPassengerDetails ? "PASSENGER IN CAR: ADD DETAILS" : "PASSENGER IN CAR: VERIFY NOW"}
-                        </Text>
-                      ) : null}
-                      {booking.bookingStatus === "passenger_verified" ? (
-                        <View style={styles.verifiedBadge}>
-                          <Text style={styles.verifiedBadgeIcon}>✓</Text>
-                          <Text style={styles.verifiedBadgeText}>Checked</Text>
-                        </View>
-                      ) : null}
-                      <Text style={styles.bookingRef}>{booking.reference}</Text>
-                    </View>
-                    <CountdownBadge label={countdown.label} tone={countdown.tone} />
-                  </View>
-                  <Text style={styles.bookingPassenger}>
-                    {booking.customerName === "Passenger details not provided" ? "Passenger details missing" : booking.customerName}
+                  Login
+                </Button>
+                <Surface elevation={0} style={styles.testingPanel}>
+                  <Text variant="titleSmall" style={styles.testingTitle}>
+                    Testing mode
                   </Text>
-                  <Text style={styles.bookingRoute}>{booking.pickupLocationDescription}</Text>
-                  <Text style={styles.bookingSubtext}>Pickup {booking.pickupTimeLocal}</Text>
-                </Pressable>
-              );
-            })}
-          </>
-        ) : null}
-
-        {screen === "booking" && selectedBooking ? (
-          <>
-            <View style={styles.header}>
-              <View>
-                <Text style={styles.brandLabel}>Carmak Driver</Text>
-                <Text style={styles.pageTitle}>Pickup check-in</Text>
-                <Text style={styles.pageSubtitle}>Reach pickup first. Add or verify passenger details only after the passenger is in the car.</Text>
-              </View>
-              <Pressable onPress={logout} style={styles.logoutButton}>
-                <Text style={styles.logoutButtonText}>Logout</Text>
-              </Pressable>
-            </View>
-
-            <Pressable onPress={() => setScreen("home")} style={styles.backLink}>
-              <Text style={styles.backLinkText}>Back to pickups</Text>
-            </Pressable>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Pickup details</Text>
-              <CountdownBadge label={getPickupCountdown(selectedBooking.pickupTimeLocal).label} tone={getPickupCountdown(selectedBooking.pickupTimeLocal).tone} />
-              <BookingRow label="Reference" value={selectedBooking.reference} />
-              <MapRow label="Pickup" value={selectedBooking.pickupLocationDescription} onPress={() => openInGoogleMaps(selectedBooking.pickupLocationDescription)} />
-              <BookingRow label="Pickup time" value={selectedBooking.pickupTimeLocal} />
-              <BookingRow label="Passenger name" value={selectedBooking.customerName} />
-              <BookingRow label="Mobile" value={selectedBooking.customerMobileNumber || "Not provided"} />
-              {selectedBooking.bookingStatus === "assigned" ? (
-                <Pressable onPress={markPassengerInCar} style={styles.primaryButton}>
-                  <Text style={styles.primaryButtonText}>Passenger in car</Text>
-                </Pressable>
-              ) : null}
-            </View>
-
-            {selectedBooking.bookingStatus === "assigned" ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Next step</Text>
-                <Text style={styles.cardText}>Navigate to pickup first. Once the passenger is in the car, tap Passenger in car to unlock the passenger form.</Text>
-              </View>
-            ) : (
+                  <Text variant="bodyMedium" style={styles.testingBody}>
+                    This preview opens directly so users can test the flow without credentials.
+                  </Text>
+                </Surface>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
+        ) : (
+          <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+            {screen === "home" ? (
               <>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Passenger details required in car</Text>
-                  <Text style={styles.cardText}>Check the passenger details now. If anything is missing, add it before verification.</Text>
-                  <Field label="Passenger name" value={passengerDraft.customerName} onChangeText={(value) => setPassengerDraft((current) => ({ ...current, customerName: value }))} placeholder={selectedBooking.customerName === "Passenger details not provided" ? "Enter passenger name" : selectedBooking.customerName} />
-                  <Field label="Mobile number" value={passengerDraft.customerMobileNumber} onChangeText={(value) => setPassengerDraft((current) => ({ ...current, customerMobileNumber: value }))} placeholder={selectedBooking.customerMobileNumber || "Enter mobile number"} keyboardType="phone-pad" />
-                  <Field label="Nationality" value={passengerDraft.nationality} onChangeText={(value) => setPassengerDraft((current) => ({ ...current, nationality: value }))} placeholder={selectedBooking.nationality || "Enter nationality"} />
-                  <Field label="Emirates ID number" value={passengerDraft.emiratesIdNumber} onChangeText={(value) => setPassengerDraft((current) => ({ ...current, emiratesIdNumber: value }))} placeholder={selectedBooking.emiratesIdNumber || "Optional if passport is provided"} />
-                  <Field label="Passport number" value={passengerDraft.passportNumber} onChangeText={(value) => setPassengerDraft((current) => ({ ...current, passportNumber: value }))} placeholder={selectedBooking.passportNumber || "Optional if Emirates ID is provided"} />
-                </View>
+                <Header
+                  title="Today's pickups"
+                  subtitle="Drivers only need the pickup, the passenger status, and the in-car check-in."
+                  onLogout={logout}
+                />
 
-                <View style={styles.actionStack}>
-                  <Pressable onPress={savePassengerDetails} style={styles.secondaryButton}>
-                    <Text style={styles.secondaryButtonText}>Save passenger details</Text>
-                  </Pressable>
-                  <Pressable onPress={confirmPassenger} style={styles.primaryButton}>
-                    <Text style={styles.primaryButtonText}>Verify passenger now</Text>
-                  </Pressable>
-                </View>
+                <Surface style={styles.heroSurface} elevation={1}>
+                  <Text variant="titleLarge" style={styles.heroName}>
+                    {demoDriver.name}
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.heroMeta}>
+                    Vehicle {demoDriver.assignedVehicle}
+                  </Text>
+                  <View style={styles.heroStatsRow}>
+                    <MetricCard label="Need action" value={needsActionCount} />
+                    <MetricCard label="Checked" value={checkedCount} />
+                  </View>
+                </Surface>
+
+                <Surface style={styles.syncSurface} elevation={0}>
+                  <Chip
+                    compact
+                    mode="flat"
+                  >
+                    {pendingSyncCount > 0
+                      ? `${pendingSyncCount} update(s) syncing in background`
+                      : "All updates synced"}
+                  </Chip>
+                </Surface>
+
+                <Text variant="titleMedium" style={styles.sectionTitle}>
+                  Pickups
+                </Text>
+
+                {bookings.map((booking) => {
+                  const missingPassengerDetails =
+                    !booking.customerMobileNumber ||
+                    !booking.nationality ||
+                    (!booking.emiratesIdNumber && !booking.passportNumber) ||
+                    booking.customerName === "Passenger details not provided";
+                  const countdown = getPickupCountdown(booking.pickupTimeLocal);
+
+                  return (
+                    <Pressable key={booking.id} onPress={() => openBooking(booking.id)}>
+                      <Card mode="elevated" style={styles.bookingCard}>
+                        <Card.Content style={styles.bookingCardContent}>
+                          <View style={styles.bookingTopRow}>
+                            <Text variant="labelLarge" style={styles.bookingRef}>
+                              {booking.reference}
+                            </Text>
+                            <Chip compact mode="flat" style={countdown.style}>
+                              {countdown.label}
+                            </Chip>
+                          </View>
+
+                          {booking.bookingStatus === "arrived" ? (
+                            <Chip
+                              compact
+                              style={styles.warningChip}
+                              textStyle={styles.warningChipText}
+                            >
+                              {missingPassengerDetails ? "Passenger in car: add details" : "Passenger in car: verify now"}
+                            </Chip>
+                          ) : null}
+
+                          {booking.bookingStatus === "passenger_verified" ? (
+                            <Chip compact style={styles.checkedChip}>
+                              Checked
+                            </Chip>
+                          ) : null}
+
+                          <Text variant="titleLarge" style={styles.bookingPassenger}>
+                            {booking.customerName === "Passenger details not provided"
+                              ? "Passenger details missing"
+                              : booking.customerName}
+                          </Text>
+                          <Text variant="bodyLarge" style={styles.bookingPickup}>
+                            {booking.pickupLocationDescription}
+                          </Text>
+                          <Text variant="bodyMedium" style={styles.bookingTime}>
+                            Pickup {booking.pickupTimeLocal}
+                          </Text>
+                        </Card.Content>
+                      </Card>
+                    </Pressable>
+                  );
+                })}
               </>
-            )}
-          </>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+            ) : null}
+
+            {screen === "booking" && selectedBooking ? (
+              <>
+                <Header
+                  title="Pickup check-in"
+                  subtitle="Use this screen only at pickup. Passenger details are completed after the passenger is in the car."
+                  onLogout={logout}
+                />
+
+                <Button
+                  mode="text"
+                  onPress={() => setScreen("home")}
+                  style={styles.backButton}
+                  labelStyle={styles.ctaLabel}
+                >
+                  Back to pickups
+                </Button>
+
+                <Card mode="elevated" style={styles.detailCard}>
+                  <Card.Content style={styles.detailContent}>
+                    <View style={styles.detailTopRow}>
+                      <Text variant="titleLarge">Pickup details</Text>
+                      <Chip compact mode="flat" style={getPickupCountdown(selectedBooking.pickupTimeLocal).style}>
+                        {getPickupCountdown(selectedBooking.pickupTimeLocal).label}
+                      </Chip>
+                    </View>
+
+                    <DetailRow label="Reference" value={selectedBooking.reference} />
+                    <Divider />
+                    <MapRow
+                      label="Pickup"
+                      value={selectedBooking.pickupLocationDescription}
+                      onPress={() => openInGoogleMaps(selectedBooking.pickupLocationDescription)}
+                    />
+                    <Divider />
+                    <DetailRow label="Pickup time" value={selectedBooking.pickupTimeLocal} />
+                    <Divider />
+                    <DetailRow label="Passenger name" value={selectedBooking.customerName} />
+                    <Divider />
+                    <DetailRow label="Mobile" value={selectedBooking.customerMobileNumber || "Not provided"} />
+
+                    {selectedBooking.bookingStatus === "assigned" ? (
+                      <Button
+                        mode="contained"
+                        onPress={markPassengerInCar}
+                        style={styles.inCarButton}
+                        contentStyle={styles.primaryButtonContent}
+                        labelStyle={styles.ctaLabel}
+                      >
+                        Passenger in car
+                      </Button>
+                    ) : null}
+                  </Card.Content>
+                </Card>
+
+                {selectedBooking.bookingStatus === "assigned" ? (
+                  <Card mode="outlined" style={styles.infoCard}>
+                    <Card.Content>
+                      <Text variant="titleMedium" style={styles.infoTitle}>
+                        Next step
+                      </Text>
+                      <Text variant="bodyLarge" style={styles.infoBody}>
+                        Reach the passenger first. Once the passenger is seated, tap Passenger in car and the form will unlock.
+                      </Text>
+                    </Card.Content>
+                  </Card>
+                ) : (
+                  <>
+                    <Card mode="elevated" style={styles.formCard}>
+                      <Card.Content style={styles.formContent}>
+                        <Text variant="headlineSmall" style={styles.formTitle}>
+                          Passenger details
+                        </Text>
+                        <Text variant="bodyLarge" style={styles.formBody}>
+                          This section is required now. If any detail is missing, add it here before you verify the passenger.
+                        </Text>
+
+                        <TextInput
+                          mode="outlined"
+                          label="Passenger name"
+                          value={passengerDraft.customerName}
+                          onChangeText={(value) =>
+                            setPassengerDraft((current) => ({ ...current, customerName: value }))
+                          }
+                          style={styles.paperInput}
+                        />
+                        <TextInput
+                          mode="outlined"
+                          label="Mobile number"
+                          value={passengerDraft.customerMobileNumber}
+                          onChangeText={(value) =>
+                            setPassengerDraft((current) => ({ ...current, customerMobileNumber: value }))
+                          }
+                          keyboardType="phone-pad"
+                          style={styles.paperInput}
+                        />
+                        <TextInput
+                          mode="outlined"
+                          label="Nationality"
+                          value={passengerDraft.nationality}
+                          onChangeText={(value) =>
+                            setPassengerDraft((current) => ({ ...current, nationality: value }))
+                          }
+                          style={styles.paperInput}
+                        />
+                        <TextInput
+                          mode="outlined"
+                          label="Emirates ID number"
+                          value={passengerDraft.emiratesIdNumber}
+                          onChangeText={(value) =>
+                            setPassengerDraft((current) => ({ ...current, emiratesIdNumber: value }))
+                          }
+                          style={styles.paperInput}
+                        />
+                        <Text variant="bodySmall" style={styles.helperText}>
+                          Required if passport is not available
+                        </Text>
+                        <TextInput
+                          mode="outlined"
+                          label="Passport number"
+                          value={passengerDraft.passportNumber}
+                          onChangeText={(value) =>
+                            setPassengerDraft((current) => ({ ...current, passportNumber: value }))
+                          }
+                          style={styles.paperInput}
+                        />
+                        <Text variant="bodySmall" style={styles.helperText}>
+                          Required if Emirates ID is not available
+                        </Text>
+                      </Card.Content>
+                    </Card>
+
+                    <View style={styles.formActions}>
+                      <Button
+                        mode="outlined"
+                        onPress={savePassengerDetails}
+                        contentStyle={styles.secondaryButtonContent}
+                        labelStyle={styles.ctaLabel}
+                      >
+                        Save passenger details
+                      </Button>
+                      <Button
+                        mode="contained"
+                        onPress={verifyPassenger}
+                        contentStyle={styles.primaryButtonContent}
+                        labelStyle={styles.ctaLabel}
+                      >
+                        Verify passenger now
+                      </Button>
+                    </View>
+                  </>
+                )}
+              </>
+            ) : null}
+          </ScrollView>
+        )}
+      </SafeAreaView>
+    </PaperProvider>
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
+function Header({
+  title,
+  subtitle,
+  onLogout,
+}: {
+  title: string;
+  subtitle: string;
+  onLogout: () => void;
+}) {
   return (
-    <View style={styles.miniStat}>
-      <Text style={styles.miniStatValue}>{value}</Text>
-      <Text style={styles.miniStatLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function BookingRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.bookingRow}>
-      <Text style={styles.bookingRowLabel}>{label}</Text>
-      <Text style={styles.bookingRowValue}>{value}</Text>
-    </View>
-  );
-}
-
-function MapRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.bookingRow, styles.mapRow]}>
-      <View style={styles.mapRowTextWrap}>
-        <Text style={styles.bookingRowLabel}>{label}</Text>
-        <Text style={styles.bookingRowValue}>{value}</Text>
-        <Text style={styles.mapHelperText}>Launches Google Maps</Text>
+    <View style={styles.header}>
+      <View style={styles.headerTextWrap}>
+        <Text variant="labelLarge" style={styles.brandLabel}>
+          Carmak Driver
+        </Text>
+        <Text variant="headlineMedium" style={styles.pageTitle}>
+          {title}
+        </Text>
+        <Text variant="bodyLarge" style={styles.pageSubtitle}>
+          {subtitle}
+        </Text>
       </View>
-      <View style={styles.mapLaunchChip}>
-        <Text style={styles.mapLaunchChipText}>Launch Google Maps</Text>
+      <Button mode="text" onPress={onLogout} labelStyle={styles.ctaLabel}>
+        Logout
+      </Button>
+    </View>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return (
+    <Surface style={styles.metricSurface} elevation={0}>
+      <Text variant="headlineSmall" style={styles.metricValue}>
+        {value}
+      </Text>
+      <Text variant="bodyMedium" style={styles.metricLabel}>
+        {label}
+      </Text>
+    </Surface>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text variant="labelLarge" style={styles.detailLabel}>
+        {label}
+      </Text>
+      <Text variant="bodyLarge" style={styles.detailValue}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function MapRow({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress}>
+      <View style={styles.detailRow}>
+        <Text variant="labelLarge" style={styles.detailLabel}>
+          {label}
+        </Text>
+        <Text variant="bodyLarge" style={styles.detailValue}>
+          {value}
+        </Text>
+        <Text variant="bodySmall" style={styles.mapHelper}>
+          Launch Google Maps
+        </Text>
       </View>
     </Pressable>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  keyboardType,
-}: {
+function getPickupCountdown(pickupTimeLocal: string): {
   label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder?: string;
-  keyboardType?: "default" | "phone-pad";
-}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#7d8699"
-        keyboardType={keyboardType ?? "default"}
-        style={styles.input}
-      />
-    </View>
-  );
-}
-
-function CountdownBadge({ label, tone }: { label: string; tone: "urgent" | "soon" | "normal" | "past" }) {
-  const toneStyle =
-    tone === "urgent"
-      ? styles.countdownUrgent
-      : tone === "soon"
-        ? styles.countdownSoon
-        : tone === "past"
-          ? styles.countdownPast
-          : styles.countdownNormal;
-  const textStyle =
-    tone === "urgent"
-      ? styles.countdownUrgentText
-      : tone === "soon"
-        ? styles.countdownSoonText
-        : tone === "past"
-          ? styles.countdownPastText
-          : styles.countdownNormalText;
-
-  return (
-    <View style={[styles.countdownBadge, toneStyle]}>
-      <Text style={[styles.countdownText, textStyle]}>{label}</Text>
-    </View>
-  );
-}
-
-function getPickupCountdown(pickupTimeLocal: string): { label: string; tone: "urgent" | "soon" | "normal" | "past" } {
+  tone: "urgent" | "soon" | "normal" | "past";
+  style: object;
+} {
   const pickupDate = parsePickupDate(pickupTimeLocal);
   if (!pickupDate) {
-    return { label: "Pickup time unavailable", tone: "normal" };
+    return { label: "Pickup time unavailable", tone: "normal", style: styles.countdownNormal };
   }
 
   const diffMinutes = Math.round((pickupDate.getTime() - Date.now()) / 60000);
 
   if (diffMinutes < 0) {
     const overdueMinutes = Math.abs(diffMinutes);
-    if (overdueMinutes < 60) {
-      return { label: `${overdueMinutes} min past pickup`, tone: "past" };
-    }
-    const overdueHours = Math.floor(overdueMinutes / 60);
-    return { label: `${overdueHours} hr past pickup`, tone: "past" };
+    return {
+      label: overdueMinutes < 60 ? `${overdueMinutes} min past pickup` : `${Math.floor(overdueMinutes / 60)} hr past pickup`,
+      tone: "past",
+      style: styles.countdownPast,
+    };
   }
 
   if (diffMinutes <= 15) {
-    return { label: `Pickup in ${diffMinutes} min`, tone: "urgent" };
+    return { label: `Pickup in ${diffMinutes} min`, tone: "urgent", style: styles.countdownUrgent };
   }
 
   if (diffMinutes <= 45) {
-    return { label: `Pickup in ${diffMinutes} min`, tone: "soon" };
+    return { label: `Pickup in ${diffMinutes} min`, tone: "soon", style: styles.countdownSoon };
   }
 
   if (diffMinutes < 120) {
     const hours = Math.floor(diffMinutes / 60);
     const minutes = diffMinutes % 60;
-    return { label: `Pickup in ${hours}h ${minutes}m`, tone: "normal" };
+    return { label: `Pickup in ${hours}h ${minutes}m`, tone: "normal", style: styles.countdownNormal };
   }
 
-  const hours = Math.floor(diffMinutes / 60);
-  return { label: `Pickup in ${hours} hours`, tone: "normal" };
+  return {
+    label: `Pickup in ${Math.floor(diffMinutes / 60)} hours`,
+    tone: "normal",
+    style: styles.countdownNormal,
+  };
 }
 
 function parsePickupDate(value: string): Date | null {
@@ -522,406 +641,279 @@ function openInGoogleMaps(address: string) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#07111F",
+    backgroundColor: "#0E141B",
   },
   loginShell: {
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 20,
     paddingVertical: 24,
-    backgroundColor: "#07111F",
+    backgroundColor: "#0E141B",
   },
   loginCard: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 28,
-    padding: 24,
-    gap: 20,
+    backgroundColor: "#151D26",
   },
-  loginIntro: {
-    gap: 10,
+  loginCardContent: {
+    gap: 18,
+    paddingVertical: 10,
   },
-  loginBadge: {
+  loginChip: {
     alignSelf: "flex-start",
-    backgroundColor: "#E7F1FF",
-    color: "#1456C1",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
+    backgroundColor: "#1F3937",
   },
   loginTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#0E1726",
+    color: "#F3F7FB",
+    fontSize: 32,
+    lineHeight: 38,
   },
-  loginText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#536179",
+  loginBody: {
+    color: "#A7B7C8",
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  testingPanel: {
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: "#1A2430",
+  },
+  testingTitle: {
+    color: "#F3F7FB",
+    fontSize: 18,
+    marginBottom: 4,
+  },
+  testingBody: {
+    color: "#9CB0C3",
+    fontSize: 16,
+    lineHeight: 20,
   },
   page: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 44,
+    gap: 16,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: 12,
+    gap: 12,
+  },
+  headerTextWrap: {
+    flex: 1,
+    gap: 6,
   },
   brandLabel: {
-    color: "#8FB8FF",
-    fontSize: 12,
-    fontWeight: "700",
+    color: "#FFB86B",
+    fontSize: 15,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   pageTitle: {
-    color: "#FFFFFF",
-    fontSize: 28,
-    fontWeight: "800",
-    marginTop: 6,
+    color: "#F3F7FB",
+    fontSize: 30,
+    lineHeight: 36,
   },
   pageSubtitle: {
-    color: "#AAC0E0",
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-    maxWidth: 280,
+    color: "#9CB0C3",
+    fontSize: 17,
+    lineHeight: 22,
   },
-  logoutButton: {
-    backgroundColor: "#12233D",
-    borderColor: "#203A61",
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
+  heroSurface: {
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: "#162A37",
   },
-  logoutButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
+  heroName: {
+    color: "#F7FBFF",
+    fontSize: 24,
+    lineHeight: 30,
   },
-  summaryCard: {
-    backgroundColor: "#0F1E34",
-    borderRadius: 28,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#1B3250",
-    marginBottom: 16,
-  },
-  summaryDriver: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  summaryMeta: {
-    color: "#C1D1E5",
-    marginTop: 6,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    marginTop: 14,
-  },
-  miniStat: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 14,
-    marginRight: 12,
-  },
-  miniStatValue: {
-    color: "#0E1726",
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  miniStatLabel: {
-    color: "#607086",
-    fontWeight: "600",
+  heroMeta: {
+    color: "#9FC4D9",
+    fontSize: 16,
     marginTop: 4,
   },
-  syncBanner: {
+  heroStatsRow: {
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#12233D",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
+    gap: 12,
+    marginTop: 16,
   },
-  syncDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    marginRight: 10,
+  metricSurface: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: "#1A2430",
   },
-  syncDotActive: {
-    backgroundColor: "#F79009",
+  metricValue: {
+    color: "#F3F7FB",
+    fontSize: 28,
+    lineHeight: 34,
   },
-  syncDotIdle: {
-    backgroundColor: "#12B76A",
+  metricLabel: {
+    color: "#9CB0C3",
+    fontSize: 16,
+    marginTop: 2,
   },
-  syncBannerText: {
-    color: "#D4E2F3",
-    fontWeight: "600",
+  syncSurface: {
+    backgroundColor: "transparent",
   },
   sectionTitle: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 12,
+    color: "#F3F7FB",
+    fontSize: 22,
+    lineHeight: 28,
+    marginTop: 10,
+    marginBottom: 8,
   },
   bookingCard: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 24,
-    padding: 18,
-    borderWidth: 1,
-    overflow: "hidden",
     marginBottom: 12,
+    backgroundColor: "#151D26",
   },
-  bookingCardWarning: {
-    borderColor: "#F79009",
-    backgroundColor: "#FFFDF8",
-  },
-  bookingCardSuccess: {
-    borderColor: "#12B76A",
-    backgroundColor: "#FBFEFC",
-  },
-  bookingCardNeutral: {
-    borderColor: "#D8E2F0",
-    backgroundColor: "#FFFFFF",
-  },
-  bookingAccentBar: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 8,
-  },
-  bookingAccentWarning: {
-    backgroundColor: "#F79009",
-  },
-  bookingAccentSuccess: {
-    backgroundColor: "#12B76A",
-  },
-  bookingAccentNeutral: {
-    backgroundColor: "#1456C1",
+  bookingCardContent: {
+    gap: 10,
   },
   bookingTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-  },
-  bookingTopMeta: {
-    flex: 1,
-  },
-  bookingStateTitle: {
-    fontSize: 13,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    marginBottom: 4,
-  },
-  bookingStateTitleWarning: {
-    color: "#9A3412",
-  },
-  verifiedBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#DDF8E8",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginBottom: 4,
-  },
-  verifiedBadgeIcon: {
-    color: "#0E6B4A",
-    fontSize: 13,
-    fontWeight: "900",
-    marginRight: 6,
-  },
-  verifiedBadgeText: {
-    color: "#0E6B4A",
-    fontSize: 12,
-    fontWeight: "800",
+    gap: 12,
   },
   bookingRef: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#1456C1",
-    letterSpacing: 0.4,
+    color: "#FFB86B",
+    fontSize: 15,
   },
   bookingPassenger: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#0E1726",
-    marginTop: 10,
+    color: "#F3F7FB",
+    fontSize: 25,
+    lineHeight: 31,
   },
-  countdownBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  countdownText: {
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  countdownUrgent: {
-    backgroundColor: "#FFE4E8",
-  },
-  countdownUrgentText: {
-    color: "#B42318",
-  },
-  countdownSoon: {
-    backgroundColor: "#FFF2D6",
-  },
-  countdownSoonText: {
-    color: "#B54708",
-  },
-  countdownNormal: {
-    backgroundColor: "#E7F1FF",
-  },
-  countdownNormalText: {
-    color: "#1456C1",
-  },
-  countdownPast: {
-    backgroundColor: "#F4E8FF",
-  },
-  countdownPastText: {
-    color: "#7A2BBF",
-  },
-  bookingRoute: {
-    color: "#59677C",
-    lineHeight: 20,
-    marginTop: 8,
-  },
-  bookingSubtext: {
-    color: "#7A879B",
-    fontWeight: "600",
-    marginTop: 6,
-  },
-  backLink: {
-    alignSelf: "flex-start",
-    marginBottom: 12,
-  },
-  backLinkText: {
-    color: "#9EC4FF",
-    fontWeight: "700",
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-  },
-  cardTitle: {
-    color: "#0E1726",
+  bookingPickup: {
+    color: "#B3C2D1",
     fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 12,
+    lineHeight: 22,
   },
-  cardText: {
-    color: "#5F6C80",
-    lineHeight: 20,
+  bookingTime: {
+    color: "#8FA2B6",
+    fontSize: 16,
   },
-  bookingRow: {
-    backgroundColor: "#F6F8FB",
-    borderRadius: 18,
-    padding: 14,
-    marginTop: 10,
+  warningChip: {
+    alignSelf: "flex-start",
+    backgroundColor: "#3D241E",
   },
-  mapRow: {
+  warningChipText: {
+    color: "#FFB5A6",
+  },
+  checkedChip: {
+    alignSelf: "flex-start",
+    backgroundColor: "#1F3937",
+  },
+  backButton: {
+    alignSelf: "flex-start",
+    marginBottom: 8,
+  },
+  detailCard: {
+    borderRadius: 24,
+    marginBottom: 16,
+    backgroundColor: "#151D26",
+  },
+  detailContent: {
+    gap: 14,
+  },
+  detailTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 12,
   },
-  mapRowTextWrap: {
-    flex: 1,
-    marginRight: 12,
+  detailRow: {
+    paddingVertical: 6,
+    gap: 4,
   },
-  mapHelperText: {
-    color: "#607086",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 4,
+  detailLabel: {
+    color: "#8FA2B6",
+    fontSize: 15,
   },
-  mapLaunchChip: {
-    backgroundColor: "#E7F1FF",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  detailValue: {
+    color: "#F3F7FB",
+    fontSize: 19,
+    lineHeight: 25,
   },
-  mapLaunchChipText: {
-    color: "#1456C1",
-    fontWeight: "800",
-    fontSize: 12,
-    textAlign: "center",
+  mapHelper: {
+    color: "#73B6FF",
+    fontSize: 15,
+    marginTop: 2,
   },
-  bookingRowLabel: {
-    color: "#607086",
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
+  inCarButton: {
+    marginTop: 8,
   },
-  bookingRowValue: {
-    color: "#0E1726",
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: 4,
+  infoCard: {
+    borderRadius: 24,
+    marginBottom: 16,
+    backgroundColor: "#1A2430",
   },
-  field: {
-    marginTop: 12,
-  },
-  fieldLabel: {
-    color: "#344054",
-    fontWeight: "700",
+  infoTitle: {
+    color: "#F3F7FB",
+    fontSize: 22,
     marginBottom: 8,
   },
-  actionStack: {
-    marginTop: 4,
+  infoBody: {
+    color: "#9CB0C3",
+    fontSize: 17,
+    lineHeight: 22,
   },
-  primaryButton: {
-    backgroundColor: "#1456C1",
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderRadius: 18,
-    alignItems: "center",
-    marginTop: 12,
+  formCard: {
+    borderRadius: 24,
+    marginBottom: 14,
+    backgroundColor: "#151D26",
   },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "800",
+  formContent: {
+    gap: 12,
   },
-  secondaryButton: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D3DCE7",
-    marginTop: 12,
+  formTitle: {
+    color: "#F3F7FB",
+    fontSize: 28,
+    lineHeight: 34,
   },
-  secondaryButtonText: {
-    color: "#0E1726",
-    fontSize: 16,
-    fontWeight: "800",
+  formBody: {
+    color: "#9CB0C3",
+    fontSize: 17,
+    lineHeight: 22,
   },
-  tipCard: {
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: "#F4F7FB",
+  paperInput: {
+    backgroundColor: "#121A22",
   },
-  tipTitle: {
-    color: "#0E1726",
-    fontWeight: "800",
+  helperText: {
+    color: "#8FA2B6",
+    fontSize: 15,
+    lineHeight: 20,
+    marginTop: -6,
   },
-  tipText: {
-    color: "#5F6C80",
-    marginTop: 3,
+  formActions: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  primaryButtonContent: {
+    minHeight: 52,
+  },
+  secondaryButtonContent: {
+    minHeight: 52,
+  },
+  ctaLabel: {
+    fontSize: 17,
+    fontWeight: "900",
+    letterSpacing: 0.2,
+  },
+  countdownUrgent: {
+    backgroundColor: "#4A2523",
+  },
+  countdownSoon: {
+    backgroundColor: "#4B3720",
+  },
+  countdownNormal: {
+    backgroundColor: "#1F3937",
+  },
+  countdownPast: {
+    backgroundColor: "#34234A",
   },
 });
